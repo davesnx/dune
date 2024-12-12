@@ -26,7 +26,11 @@ Test melange manifest
 
   $ ls _build/default/output
   main.js
+  melange-manifest.sexp
   node_modules
+
+  $ cat _build/default/output/melange-manifest.sexp
+  ((_build/default/main.ml (_build/default/output/main.js)))
 
   $ dune rules @melange | grep -C 3 "manifest"
   Creating manifest rule
@@ -36,4 +40,16 @@ Test melange manifest
     manifest path: _build/default/output/melange-manifest.sexp
     manifest content:
   ((_build/default/main.ml (_build/default/output/main.js)))
-  [1]
+  
+  ((deps ())
+   (targets
+    ((files (_build/default/output/melange-manifest.sexp)) (directories ())))
+   (context default)
+   (action
+    (chdir
+     _build/default
+     (write-file
+      output/melange-manifest.sexp
+      "((_build/default/main.ml (_build/default/output/main.js)))"))))
+  
+  ((deps

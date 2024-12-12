@@ -1,6 +1,17 @@
 open Import
 open Memo.O
 
+(* attach [deps] to the specified [alias] AND the (dune default) [all] alias.
+
+   when [alias] is not supplied, {!Melange_stanzas.Emit.implicit_alias} is
+   assumed. *)
+let add_deps_to_aliases ?(alias = Melange_stanzas.Emit.implicit_alias) ~dir deps =
+  let alias = Alias.make alias ~dir in
+  let dune_default_alias = Alias.make Alias0.all ~dir in
+  let attach alias = Rules.Produce.Alias.add_deps alias deps in
+  Memo.parallel_iter ~f:attach [ alias; dune_default_alias ]
+;;
+
 let output_of_lib =
   let public_lib ~info ~target_dir lib_name =
     `Public_library
@@ -73,7 +84,7 @@ module Manifest = struct
     { source; targets }
   ;;
 
-  let create_manifest_rule ~sctx ~dir ~target_dir ~mode mappings =
+  let setup_manifest_rule ~sctx ~dir ~target_dir ~mode mappings =
     let manifest_path = Path.Build.relative target_dir "melange-manifest.sexp" in
     Format.eprintf "Creating manifest rule@.";
     Format.eprintf "  dir: %s@." (Path.Build.to_string dir);
@@ -83,9 +94,14 @@ module Manifest = struct
     let manifest = { mappings } in
     let manifest_str = to_string manifest in
     Format.eprintf "  manifest content:@.%s@." manifest_str;
-    Action_builder.return manifest_str
-    |> Action_builder.write_file_dyn manifest_path
-    |> Super_context.add_rule sctx ~dir ~mode
+    let* () =
+      Action_builder.return manifest_str
+      |> Action_builder.write_file_dyn manifest_path
+      |> Super_context.add_rule sctx ~dir:target_dir ~mode
+    in
+    let manifest_dep = Action_builder.path (Path.build manifest_path) in
+    let* () = add_deps_to_aliases ~dir:target_dir manifest_dep in
+    Memo.return ()
   ;;
 end
 
@@ -288,17 +304,6 @@ let build_js
         | None -> command)
     in
     Super_context.add_rule sctx ~dir ~loc ~mode build)
-;;
-
-(* attach [deps] to the specified [alias] AND the (dune default) [all] alias.
-
-   when [alias] is not supplied, {!Melange_stanzas.Emit.implicit_alias} is
-   assumed. *)
-let add_deps_to_aliases ?(alias = Melange_stanzas.Emit.implicit_alias) ~dir deps =
-  let alias = Alias.make alias ~dir in
-  let dune_default_alias = Alias.make Alias0.all ~dir in
-  let attach alias = Rules.Produce.Alias.add_deps alias deps in
-  Memo.parallel_iter ~f:attach [ alias; dune_default_alias ]
 ;;
 
 let setup_emit_cmj_rules
@@ -522,11 +527,11 @@ let setup_entries_js
     List.map modules_for_js ~f:(fun m ->
       Manifest.create_mapping ~module_systems ~output m)
   in
-  let* () = Manifest.create_manifest_rule ~sctx ~dir ~target_dir ~mode mappings in
   let obj_dir = Obj_dir.of_local local_obj_dir in
   let* () =
     setup_runtime_assets_rules sctx ~dir ~target_dir ~mode ~output ~for_:`Emit mel
   in
+  let* () = Manifest.setup_manifest_rule ~sctx ~dir ~target_dir ~mode mappings in
   let local_modules_and_obj_dir =
     Some (Modules.With_vlib.modules local_modules, local_obj_dir)
   in
