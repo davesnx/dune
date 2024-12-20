@@ -11,10 +11,8 @@ Test melange manifest
   >  (modules main))
   > EOF
 
-  > ls
-
   $ cat > main.re <<EOF
-  > Js.log "hello"
+  > Js.log("hello");
   > EOF
 
   $ dune build @melange
