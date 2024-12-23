@@ -544,48 +544,6 @@ let setup_entries_js
   let loc = mel.loc in
   let module_systems = mel.module_systems in
   let* requires_link = Memo.Lazy.force requires_link in
-  (* Format.eprintf "local modules:@.";
-     let* () =
-     Modules.fold_user_written local_modules ~init:(Memo.return ()) ~f:(fun m acc ->
-     let* () = acc in
-     let name = Module.name m in
-     Format.eprintf "  Module: %s@." (Module_name.to_string name);
-     match Module.file m ~ml_kind:Impl with
-     | None ->
-     Format.eprintf "    No implementation file@.";
-     Memo.return ()
-     | Some file ->
-     Format.eprintf "    Path: %s@." (Path.to_string file);
-     Memo.return ())
-     in *)
-
-  (*
-     Format.eprintf "requires_link:@.";
-     List.iter requires_link_resolved ~f:(fun lib ->
-     let name = Lib.name lib in
-     let info = Lib.info lib in
-     let src_dir = Lib_info.src_dir info in
-     Format.eprintf "  library: %s@." (Lib_name.to_string name);
-     Format.eprintf "  path: %s@." (Path.to_string src_dir);
-     Format.eprintf "  src_dir: %s@." (Path.to_string (Lib_info.src_dir info));
-     match Lib_info.modules info with
-     | External _ -> Format.eprintf "    External modules@."
-     | Local -> Format.eprintf "    Local modules in: %s@." (Path.to_string src_dir)); *)
-  (* let* requires_link_resolved = Resolve.Memo.read_memo (Memo.return requires_link) in
-     let* () =
-     Memo.parallel_iter requires_link_resolved ~f:(fun lib ->
-     let name = Lib.name lib in
-     Format.eprintf "  Library: %s@." (Lib_name.to_string name);
-     let* _modules_with_vlib, impl_modules =
-     impl_only_modules_defined_in_this_lib ~sctx ~scope lib
-     in
-     Format.eprintf "    Implementation modules:@.";
-     List.iter impl_modules ~f:(fun m ->
-     match Module.file m ~ml_kind:Impl with
-     | None -> Format.eprintf "      No implementation file@."
-     | Some file -> Format.eprintf "      Path: %s@." (Path.to_string file));
-     Memo.return ())
-     in *)
   let* includes =
     let+ lib_config =
       let+ ocaml = Super_context.context sctx |> Context.ocaml in
@@ -594,22 +552,10 @@ let setup_entries_js
     cmj_includes ~requires_link ~scope lib_config
   in
   let output = `Private_library_or_emit target_dir in
-  (* let* mappings_for_requires_link =
-     Memo.parallel_map requires_link_resolved ~f:(fun lib ->
-     let* _modules_with_vlib, impl_modules =
-     impl_only_modules_defined_in_this_lib ~sctx ~scope lib
-     in
-     let mapping =
-     List.map impl_modules ~f:(fun m ->
-     Manifest.create_mapping ~module_systems ~output m)
-     in
-     Memo.return mapping)
-     in *)
   let obj_dir = Obj_dir.of_local local_obj_dir in
   let* () =
     setup_runtime_assets_rules sctx ~dir ~target_dir ~mode ~output ~for_:`Emit mel
   in
-  (* let* () = Manifest.setup_manifest_rule ~sctx ~dir ~target_dir ~mode mappings in *)
   let local_modules_and_obj_dir =
     Some (Modules.With_vlib.modules local_modules, local_obj_dir)
   in
