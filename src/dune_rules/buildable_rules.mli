@@ -28,6 +28,7 @@ val with_lib_deps
 type kind =
   | Executables of Buildable.t * (Loc.t * string) list
   | Library of Buildable.t * Lib_name.Local.t
+  | Parameter of Buildable.t * Lib_name.Local.t
   | Melange of
       { preprocess : Preprocess.preprocess
       ; lint : Preprocess.Without_instrumentation.t Preprocess.Per_module.t

@@ -6,7 +6,7 @@ val for_module
   :  obj_dir:Path.Build.t Obj_dir.t
   -> modules:Modules.With_vlib.t
   -> sandbox:Sandbox_config.t
-  -> vimpl:Vimpl.t option
+  -> impl:Virtual_rules.t
   -> dir:Path.Build.t
   -> sctx:Super_context.t
   -> for_:Lib_mode.t
@@ -25,7 +25,7 @@ val rules
   :  obj_dir:Path.Build.t Obj_dir.t
   -> modules:Modules.With_vlib.t
   -> sandbox:Sandbox_config.t
-  -> vimpl:Vimpl.t option
+  -> impl:Virtual_rules.t
   -> sctx:Super_context.t
   -> dir:Path.Build.t
   -> for_:Lib_mode.t

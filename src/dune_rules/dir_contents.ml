@@ -25,7 +25,7 @@ type t =
   ; mlds : (Documentation.t * Doc_sources.mld list) list Memo.Lazy.t
   ; coq : Coq_sources.t Memo.Lazy.t
   ; ml : Ml_sources.t Memo.Lazy.t
-  ; melange : Ml_sources.t Memo.Lazy.t
+  ; source_dir : Source_tree.Dir.t option
   }
 
 and kind =
@@ -33,9 +33,10 @@ and kind =
   | Group_root of t list
   | Group_part
 
-let empty kind ~dir =
+let empty kind ~dir ~source_dir =
   { kind
   ; dir
+  ; source_dir
   ; text_files = Filename.Set.empty
   ; ml = Memo.Lazy.of_val Ml_sources.empty
   ; melange = Memo.Lazy.of_val Ml_sources.empty
@@ -54,11 +55,11 @@ module Standalone_or_root = struct
 
   type nonrec t = { contents : standalone_or_root Memo.Lazy.t }
 
-  let empty ~dir =
+  let empty ~dir ~source_dir =
     { contents =
         Memo.Lazy.create (fun () ->
           Memo.return
-            { root = empty Standalone ~dir
+            { root = empty Standalone ~dir ~source_dir
             ; rules = Rules.empty
             ; subdirs = Path.Build.Map.empty
             })
@@ -86,16 +87,9 @@ type triage =
   | Group_part of Path.Build.t
 
 let dir t = t.dir
+let source_dir t = t.source_dir
 let coq t = Memo.Lazy.force t.coq
-
-let for_ t ~mode =
-  Memo.Lazy.force
-    (match mode with
-     | Lib_mode.Ocaml _ -> t.ml
-     | Melange -> t.melange)
-;;
-
-let artifacts t = Memo.Lazy.force t.ml >>= Ml_sources.artifacts
+let ocaml t = Memo.Lazy.force t.ml
 
 let dirs t =
   match t.kind with
@@ -245,7 +239,10 @@ end = struct
               let src_dir = Dune_file.dir d in
               stanzas >>= load_text_files sctx st_dir ~src_dir ~dir)
           in
-          let dirs = [ { Source_file_dir.dir; path_to_root = []; files } ] in
+          let dirs =
+            [ { Source_file_dir.dir; path_to_root = []; files; source_dir = Some st_dir }
+            ]
+          in
           let ml =
             Memo.lazy_ (fun () ->
               let lookup_vlib = lookup_vlib sctx ~current_dir:dir ~for_:(Ocaml Byte) in
@@ -286,6 +283,7 @@ end = struct
           let mlds = mlds ~sctx ~dir ~dune_file:d ~files in
           { Standalone_or_root.root =
               { kind = Standalone
+              ; source_dir = Some st_dir
               ; dir
               ; text_files = files
               ; ml
@@ -345,9 +343,20 @@ end = struct
                             ~src_dir:(Source_tree.Dir.path source_dir)
                             ~dir
                         in
-                        { Source_file_dir.dir; path_to_root = path_to_group_root; files })))
+                        { Source_file_dir.dir
+                        ; path_to_root = path_to_group_root
+                        ; files
+                        ; source_dir = Some source_dir
+                        })))
            in
-           let dirs = { Source_file_dir.dir; path_to_root = []; files } :: subdirs in
+           let dirs =
+             { Source_file_dir.dir
+             ; path_to_root = []
+             ; files
+             ; source_dir = Some source_dir
+             }
+             :: subdirs
+           in
            let lib_config =
              let+ ocaml = Context.ocaml ctx in
              ocaml.lib_config
@@ -398,23 +407,25 @@ end = struct
            in
            let mlds = mlds ~sctx ~dir ~dune_file ~files in
            let subdirs =
-             List.map subdirs ~f:(fun { Source_file_dir.dir; path_to_root = _; files } ->
-               { kind = Group_part
-               ; dir
-               ; text_files = files
-               ; ml
-               ; melange
-               ; foreign_sources
-               ; mlds
-               ; coq
-               })
+             List.map
+               subdirs
+               ~f:(fun { Source_file_dir.dir; path_to_root = _; files; source_dir } ->
+                 { kind = Group_part
+                 ; source_dir
+                 ; dir
+                 ; text_files = files
+                 ; ml
+                 ; foreign_sources
+                 ; mlds
+                 ; coq
+                 })
            in
            let root =
              { kind = Group_root subdirs
+             ; source_dir = Some source_dir
              ; dir
              ; text_files = files
              ; ml
-             ; melange
              ; foreign_sources
              ; mlds
              ; coq
@@ -433,8 +444,11 @@ end = struct
     >>= function
     | Is_component_of_a_group_but_not_the_root { group_root; stanzas = _ } ->
       Memo.return @@ Group_part group_root
-    | Lock_dir | Generated | Source_only _ ->
-      Memo.return @@ Standalone_or_root (Standalone_or_root.empty ~dir)
+    | Generated ->
+      Memo.return @@ Standalone_or_root (Standalone_or_root.empty ~dir ~source_dir:None)
+    | Lock_dir source_dir | Source_only source_dir ->
+      Memo.return
+      @@ Standalone_or_root (Standalone_or_root.empty ~dir ~source_dir:(Some source_dir))
     | Standalone (st_dir, d) ->
       Memo.return @@ Standalone_or_root (make_standalone sctx st_dir ~dir d)
     | Group_root root ->
@@ -497,9 +511,8 @@ let modules_of_lib sctx lib ~for_ =
 
 let () =
   Fdecl.set Expander.lookup_artifacts (fun ~dir ->
-    Context.DB.by_dir dir
-    >>| Context.name
-    >>= Super_context.find_exn
-    >>= Load.get ~dir
-    >>= artifacts)
+    let* t =
+      Context.DB.by_dir dir >>| Context.name >>= Super_context.find_exn >>= Load.get ~dir
+    in
+    Memo.Lazy.force t.ml >>= Ml_sources.artifacts)
 ;;

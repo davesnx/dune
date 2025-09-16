@@ -258,7 +258,7 @@ module Run (P : PARAMS) = struct
     let mock_module : Module.t =
       let source =
         let impl = Module.File.make Dialect.ocaml (Path.build (mock_ml base)) in
-        Module.Source.make ~impl [ name ]
+        Module.Source.make ~impl:(Some impl) ~intf:None [ name ]
       in
       Module.of_source ~visibility:Public ~kind:Impl source
     in
@@ -276,11 +276,12 @@ module Run (P : PARAMS) = struct
     let* deps =
       let for_ = Lib_mode.Ocaml Byte in
       let obj_dir = Compilation_context.obj_dir cctx in
-      (* TODO(anmonteiro): support melange *)
-      let modules = Compilation_context.modules cctx ~for_ in
-      let vimpl = Compilation_context.vimpl cctx ~for_ in
+
+      let modules = Compilation_context.modules cctx in
+      let impl = Compilation_context.implements cctx in
       let dir = Obj_dir.dir obj_dir in
-      Dep_rules.for_module ~obj_dir ~modules ~sandbox ~vimpl ~dir ~sctx ~for_ mock_module
+
+      Dep_rules.for_module ~obj_dir ~modules ~sandbox ~impl ~dir ~sctx mock_module
     in
     let* () =
       Module_compilation.ocamlc_i ~deps cctx mock_module ~output:(inferred_mli base)

@@ -38,7 +38,7 @@ let find_outdated_packages ~transitive ~lock_dirs_arg () =
           ~sep:Pp.space
           [ Pp.textf
               "When checking %s, the following packages:"
-              (Path.Source.to_string_maybe_quoted lock_dir_path)
+              (Path.to_string_maybe_quoted lock_dir_path)
             |> Pp.hovbox
           ; Pp.concat
               ~sep:Pp.space
@@ -75,8 +75,10 @@ let term =
   and+ lock_dirs_arg = Pkg_common.Lock_dirs_arg.term in
   let builder = Common.Builder.forbid_builds builder in
   let common, config = Common.init builder in
-  Scheduler.go_with_rpc_server ~common ~config
-  @@ find_outdated_packages ~transitive ~lock_dirs_arg
+  Scheduler.go_with_rpc_server ~common ~config (fun () ->
+    let open Fiber.O in
+    Pkg_common.check_pkg_management_enabled ()
+    >>> find_outdated_packages ~transitive ~lock_dirs_arg ())
 ;;
 
 let info =

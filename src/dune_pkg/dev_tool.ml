@@ -6,6 +6,7 @@ type t =
   | Ocamllsp
   | Utop
   | Ocamlearlybird
+  | Odig
 
 let to_dyn = function
   | Ocamlformat -> Dyn.variant "Ocamlformat" []
@@ -13,9 +14,10 @@ let to_dyn = function
   | Ocamllsp -> Dyn.variant "Ocamllsp" []
   | Utop -> Dyn.variant "Utop" []
   | Ocamlearlybird -> Dyn.variant "Ocamlearlybird" []
+  | Odig -> Dyn.variant "Odig" []
 ;;
 
-let all = [ Ocamlformat; Odoc; Ocamllsp; Utop; Ocamlearlybird ]
+let all = [ Ocamlformat; Odoc; Ocamllsp; Utop; Ocamlearlybird; Odig ]
 
 let equal a b =
   match a, b with
@@ -28,7 +30,11 @@ let equal a b =
   | Utop, Utop -> true
   | Utop, _ | _, Utop -> false
   | Ocamlearlybird, Ocamlearlybird -> true
+  | Ocamlearlybird, _ | _, Ocamlearlybird -> false
+  | Odig, Odig -> true
 ;;
+
+let hash = Poly.hash
 
 let package_name = function
   | Ocamlformat -> Package_name.of_string "ocamlformat"
@@ -36,6 +42,7 @@ let package_name = function
   | Ocamllsp -> Package_name.of_string "ocaml-lsp-server"
   | Utop -> Package_name.of_string "utop"
   | Ocamlearlybird -> Package_name.of_string "earlybird"
+  | Odig -> Package_name.of_string "odig"
 ;;
 
 let of_package_name package_name =
@@ -45,6 +52,7 @@ let of_package_name package_name =
   | "ocaml-lsp-server" -> Ocamllsp
   | "utop" -> Utop
   | "earlybird" -> Ocamlearlybird
+  | "odig" -> Odig
   | other -> User_error.raise [ Pp.textf "No such dev tool: %s" other ]
 ;;
 
@@ -54,21 +62,17 @@ let exe_name = function
   | Ocamllsp -> "ocamllsp"
   | Utop -> "utop"
   | Ocamlearlybird -> "ocamlearlybird"
+  | Odig -> "odig"
 ;;
 
-let exe_path_components_within_package t =
-  match t with
-  | Ocamlformat -> [ "bin"; exe_name t ]
-  | Odoc -> [ "bin"; exe_name t ]
-  | Ocamllsp -> [ "bin"; exe_name t ]
-  | Utop -> [ "bin"; exe_name t ]
-  | Ocamlearlybird -> [ "bin"; exe_name t ]
-;;
+let exe_path_components_within_package t = [ "bin"; exe_name t ]
 
 let needs_to_build_with_same_compiler_as_project = function
   | Ocamlformat -> false
-  | Odoc -> true
-  | Ocamllsp -> true
-  | Utop -> false
-  | Ocamlearlybird -> false
+  | Ocamlearlybird ->
+    (* CR-someday rgrinberg: I have my doubts that this is true given that
+       the debugger is expected to print identifiers. In any case,
+       ocamlearlybird isn't going to work well due to relocation issues *)
+    false
+  | Utop | Odoc | Ocamllsp | Odig -> true
 ;;

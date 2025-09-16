@@ -33,13 +33,9 @@ Reproduces #11405
   > (lang dune 3.17)
   > EOF
 
-  $ mkdir dune.lock
+  $ make_lockdir
 
-  $ cat >dune.lock/lock.dune <<EOF
-  > (lang package 0.1)
-  > EOF
-
-  $ cat >dune.lock/mypkg.pkg <<EOF
+  $ make_lockpkg mypkg <<EOF
   > (version 0.0.1)
   > (source (copy $PWD/external_sources))
   > EOF
@@ -69,7 +65,6 @@ Clearer error here as we really depend on non-existing 'no'
   Error: Library "mypkg.no" in
   _build/_private/default/.pkg/mypkg/target/lib/mypkg/no is hidden (unsatisfied
   'exists_if').
-  -> required by _build/default/.foo.eobjs/byte/dune__exe__Foo.cmi
   -> required by _build/default/.foo.eobjs/native/dune__exe__Foo.cmx
   -> required by _build/default/foo.exe
   [1]

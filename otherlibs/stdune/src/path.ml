@@ -1210,11 +1210,8 @@ let exists t =
   | Sys_error _ -> false
 ;;
 
-let readdir_unsorted t = Dune_filesystem_stubs.read_directory (to_string t)
-
-let readdir_unsorted_with_kinds t =
-  Dune_filesystem_stubs.read_directory_with_kinds (to_string t)
-;;
+let readdir_unsorted t = Readdir.read_directory (to_string t)
+let readdir_unsorted_with_kinds t = Readdir.read_directory_with_kinds (to_string t)
 
 let is_directory t =
   try Sys.is_directory (to_string t) with
@@ -1413,9 +1410,9 @@ let local_part = function
 ;;
 
 let stat_exn t = Unix.stat (to_string t)
-let stat t = Dune_filesystem_stubs.Unix_error.Detailed.catch stat_exn t
+let stat t = Unix_error.Detailed.catch stat_exn t
 let lstat_exn t = Unix.lstat (to_string t)
-let lstat t = Dune_filesystem_stubs.Unix_error.Detailed.catch lstat_exn t
+let lstat t = Unix_error.Detailed.catch lstat_exn t
 
 include (Comparator.Operators (T) : Comparator.OPS with type t := t)
 

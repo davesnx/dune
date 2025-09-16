@@ -115,7 +115,7 @@ let of_git_repo loc url =
       (sprintf
          "%s#%s"
          (OpamUrl.base_url url)
-         (Rev_store.Object.to_string (Rev_store.At_rev.rev at_rev))
+         (Rev_store.Object.to_hex (Rev_store.At_rev.rev at_rev))
        |> OpamUrl.of_string
        |> OpamUrl.to_string)
   in
@@ -165,7 +165,7 @@ let all_packages_versions_in_dir loc ~dir opam_package_name =
       [ Pp.textf
           "Unable to read package versions from %s: %s"
           (Path.to_string_maybe_quoted dir)
-          (Dune_filesystem_stubs.Unix_error.Detailed.to_string_hum e)
+          (Unix_error.Detailed.to_string_hum e)
       ]
 ;;
 

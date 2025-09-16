@@ -55,9 +55,12 @@ let add_stanza db ~dir (acc, pps) stanza =
        let not_impl = Option.is_none (Lib_info.implements info) in
        if not_impl && Path.is_descendant ~of_:(Path.build dir) src_dir
        then (
-         match Lib_info.kind info with
-         | Normal -> Appendable_list.cons lib acc, pps
-         | Lib_kind.Ppx_rewriter _ | Ppx_deriver _ ->
+         match (Lib_info.kind info : Lib_kind.t) with
+         | Virtual | Parameter | Dune_file Normal -> Appendable_list.cons lib acc, pps
+         (* CR @maiste or @art-w: the parametrized libraries in utop follows
+             the same schema as Normal library but it needs to be verified once
+             parametrized libraries are fully supported. *)
+         | Dune_file (Ppx_rewriter _ | Ppx_deriver _) ->
            ( Appendable_list.cons lib acc
            , Appendable_list.cons (Lib_info.loc info, Lib_info.name info) pps ))
        else acc, pps)
@@ -93,9 +96,12 @@ let add_stanza db ~dir (acc, pps) stanza =
      | Ok libs ->
        List.fold_left libs ~init:(acc, pps) ~f:(fun (acc, pps) lib ->
          let info = Lib.info lib in
-         match Lib_info.kind info with
-         | Normal -> Appendable_list.cons lib acc, pps
-         | Ppx_rewriter _ | Ppx_deriver _ ->
+         match (Lib_info.kind info : Lib_kind.t) with
+         | Virtual | Parameter | Dune_file Normal -> Appendable_list.cons lib acc, pps
+         (* CR @maiste or @art-w: the parametrized libraries in utop follows
+             the same schema as Normal library but it needs to be verified once
+             parametrized libraries are fully supported. *)
+         | Dune_file (Ppx_rewriter _ | Ppx_deriver _) ->
            ( Appendable_list.cons lib acc
            , Appendable_list.cons (Lib_info.loc info, Lib_info.name info) pps )))
   | _ -> Memo.return (acc, pps)
@@ -142,7 +148,7 @@ let requires ~loc ~db ~libs =
 let utop_dev_tool_lock_dir_exists =
   Memo.Lazy.create (fun () ->
     let path = Dune_pkg.Lock_dir.dev_tool_lock_dir_path Utop in
-    Fs_memo.dir_exists (Path.Outside_build_dir.In_source_dir path))
+    Fs_memo.dir_exists (Path.as_outside_build_dir_exn path))
 ;;
 
 let utop_findlib_conf = Filename.concat utop_dir_basename "findlib.conf"
@@ -161,19 +167,21 @@ let utop_ocamlpath = Memo.Lazy.create (fun () -> Pkg_rules.dev_tool_ocamlpath Ut
    we need to tell findlib where to look for libraries by means of a custom
    findlib.conf file. *)
 let findlib_conf sctx ~dir =
-  let* lock_dir_exists = Memo.Lazy.force utop_dev_tool_lock_dir_exists in
-  match lock_dir_exists with
+  Memo.Lazy.force utop_dev_tool_lock_dir_exists
+  >>= function
   | false ->
     (* If there isn't lockdir don't create the findlib.conf rule. *)
     Memo.return ()
   | true ->
     let path = Path.Build.relative dir utop_findlib_conf in
-    let* ocamlpath = Memo.Lazy.force utop_ocamlpath in
-    let findlib_path =
-      String.concat (ocamlpath |> List.map ~f:Path.to_absolute_filename) ~sep:":"
+    let contents =
+      Memo.Lazy.force utop_ocamlpath
+      >>| List.map ~f:Path.to_absolute_filename
+      >>| String.concat ~sep:":"
+      >>| sprintf "path=\"%s\""
+      |> Action_builder.of_memo
     in
-    let action = Action_builder.write_file path (sprintf "path=\"%s\"" findlib_path) in
-    Super_context.add_rule sctx ~dir action
+    Action_builder.write_file_dyn path contents |> Super_context.add_rule sctx ~dir
 ;;
 
 let lib_db sctx ~dir =

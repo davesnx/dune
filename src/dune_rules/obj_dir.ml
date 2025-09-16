@@ -618,7 +618,7 @@ module Module = struct
     match (dep : Dep.t) with
     | Immediate (m, _) | Transitive (m, _) ->
       (match Module.kind m with
-       | Module.Kind.Alias _ -> None
+       | Module.Kind.Alias _ | Root -> None
        | _ ->
          let dir =
            match for_ with

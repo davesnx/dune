@@ -15,7 +15,7 @@ jobs:
     name: Building Dune with OxCaml
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install OCaml
         uses: ocaml/setup-ocaml@v3
@@ -30,6 +30,7 @@ jobs:
       - name: Install deps
         run: |
           opam install . --deps-only
+          opam install re spawn uutf
 
       - name: Build dune
         run: opam exec -- make bootstrap

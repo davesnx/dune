@@ -362,9 +362,11 @@ module Processed = struct
       let pp_one (source, { module_; opens; reader }) =
         let open Pp.O in
         let name = Module.name module_ in
-        let unit_name = Module_name.Unique.to_string (Module.obj_name module_) in
-        let pp = Module_name.Per_item.get pp_config name in
-        let sexp = to_sexp ~unit_name ~reader ~opens ~pp config in
+        let sexp =
+          let unit_name = Module_name.Unique.to_string (Module.obj_name module_) in
+          let pp = Module_name.Per_item.get pp_config name in
+          to_sexp ~unit_name ~reader ~opens ~pp config
+        in
         Pp.hvbox
           (Pp.textf "%s: %s" (Module_name.to_string name) (Path.Build.to_string source))
         ++ Pp.newline
@@ -554,7 +556,8 @@ module Unprocessed = struct
        with
        | None -> Action_builder.return None
        | Some args ->
-         let action =
+         let open Action_builder.O in
+         let+ action =
            let action = Action_unexpanded.Run args in
            let chdir = Expander.context expander |> Context_name.build_dir in
            Action_unexpanded.expand_no_targets
@@ -575,12 +578,11 @@ module Unprocessed = struct
              in
              Some { Processed.flag = Processed.Pp_kind.Pp; args }
          in
-         Action_builder.map action ~f:(fun act ->
-           match act.action with
-           | Run (exe, args) -> pp_of_action exe args
-           | Chdir (_, Run (exe, args)) -> pp_of_action exe args
-           | Chdir (_, Chdir (_, Run (exe, args))) -> pp_of_action exe args
-           | _ -> None))
+         (match action.action with
+          | Run (exe, args) -> pp_of_action exe args
+          | Chdir (_, Run (exe, args)) -> pp_of_action exe args
+          | Chdir (_, Chdir (_, Run (exe, args))) -> pp_of_action exe args
+          | _ -> None))
     | _ -> Action_builder.return None
   ;;
 
@@ -623,20 +625,21 @@ module Unprocessed = struct
       ~f:(pp_flags ctx ~expander t.config.libname)
   ;;
 
-  let add_lib_dirs sctx mode libs ~for_ =
-    Action_builder.of_memo
-      (Memo.parallel_map libs ~f:(fun lib ->
-         let+ dirs = src_dirs sctx lib ~for_ in
-         lib, dirs)
-       >>| List.fold_left
-             ~init:(Path.Set.empty, Path.Set.empty)
-             ~f:(fun (src_dirs, obj_dirs) (lib, more_src_dirs) ->
-               ( Path.Set.union src_dirs more_src_dirs
-               , let public_cmi_dir =
-                   let info = Lib.info lib in
-                   obj_dir_of_lib `Public mode (Lib_info.obj_dir info)
-                 in
-                 Path.Set.add obj_dirs public_cmi_dir )))
+
+  let add_lib_dirs sctx mode libs =
+    Memo.parallel_map libs ~f:(fun lib ->
+      let+ dirs = src_dirs sctx lib in
+      lib, dirs)
+    >>| List.fold_left
+          ~init:(Path.Set.empty, Path.Set.empty)
+          ~f:(fun (src_dirs, obj_dirs) (lib, more_src_dirs) ->
+            ( Path.Set.union src_dirs more_src_dirs
+            , let public_cmi_dir =
+                let info = Lib.info lib in
+                obj_dir_of_lib `Public mode (Lib_info.obj_dir info)
+              in
+              Path.Set.add obj_dirs public_cmi_dir ))
+    |> Action_builder.of_memo
   ;;
 
   let process
@@ -669,16 +672,17 @@ module Unprocessed = struct
         | Ocaml _ -> Memo.return (Some stdlib_dir)
         | Melange ->
           let open Memo.O in
-          let+ dirs = Melange_binary.where sctx ~loc:None ~dir in
-          (match dirs with
+          Melange_binary.where sctx ~loc:None ~dir
+          >>| (function
            | [] -> None
            | stdlib_dir :: _ -> Some stdlib_dir)
       in
-      let requires_compile = Resolve.peek requires_compile |> Result.value ~default:[] in
-      let requires_hidden = Resolve.peek requires_hidden |> Result.value ~default:[] in
-      let* requires_compile, requires_hidden =
+      let* requires_compile =
+        let requires_compile =
+          Resolve.peek requires_compile |> Result.value ~default:[]
+        in
         match t.config.mode with
-        | Ocaml _ -> Action_builder.return (requires_compile, requires_hidden)
+        | Ocaml _ -> Action_builder.return requires_compile
         | Melange ->
           Action_builder.of_memo
             (let open Memo.O in
@@ -686,14 +690,15 @@ module Unprocessed = struct
              let libs = Scope.libs scope in
              Lib.DB.find libs (Lib_name.of_string "melange")
              >>= function
+             | None -> Memo.return requires_compile
              | Some lib ->
                let+ libs =
                  let* linking =
                    let+ ocaml = Context.ocaml (Super_context.context sctx) in
-                   Dune_project.Implicit_transitive_deps.to_bool
-                     (Dune_project.implicit_transitive_deps
-                        (Scope.project scope)
-                        ocaml.version)
+                   Dune_project.implicit_transitive_deps
+                     (Scope.project scope)
+                     ocaml.version
+                   |> Dune_project.Implicit_transitive_deps.to_bool
                  in
                  Lib.closure [ lib ] ~linking ~for_:t.config.mode
                  |> Resolve.Memo.peek
@@ -701,16 +706,15 @@ module Unprocessed = struct
                  | Ok libs -> libs
                  | Error _ -> []
                in
-               List.concat [ requires_compile; libs ], requires_hidden
-             | None -> Memo.return (requires_compile, requires_hidden))
+               List.concat [ requires_compile; libs ])
       in
       let+ flags = flags
-      and+ indexes =
-        Action_builder.of_memo (Ocaml_index.context_indexes ~for_:t.config.mode sctx)
-      and+ deps_src_dirs, deps_obj_dirs =
-        add_lib_dirs sctx mode requires_compile ~for_:t.config.mode
+
+      and+ indexes = Action_builder.of_memo (Ocaml_index.context_indexes sctx)
+      and+ deps_src_dirs, deps_obj_dirs = add_lib_dirs sctx mode requires_compile
       and+ hidden_src_dirs, hidden_obj_dirs =
-        add_lib_dirs sctx mode requires_hidden ~for_:t.config.mode
+        let requires_hidden = Resolve.peek requires_hidden |> Result.value ~default:[] in
+        add_lib_dirs sctx mode requires_hidden
       in
       let src_dirs =
         Path.Set.of_list_map ~f:Path.source more_src_dirs |> Path.Set.union deps_src_dirs

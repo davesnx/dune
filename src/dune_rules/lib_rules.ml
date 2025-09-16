@@ -92,8 +92,8 @@ let build_lib
          Expander.expand_and_eval_set expander lib.library_flags ~standard)
     ; As
         (match lib.kind with
-         | Normal -> []
-         | Ppx_deriver _ | Ppx_rewriter _ -> [ "-linkall" ])
+         | Virtual | Parameter | Dune_file Normal -> []
+         | Dune_file (Ppx_deriver _ | Ppx_rewriter _) -> [ "-linkall" ])
     ; Dyn
         (Cm_files.top_sorted_cms cm_files ~mode
          |> Action_builder.map ~f:(fun x -> Command.Args.Deps x))
@@ -123,15 +123,19 @@ let gen_wrapped_compat_modules (lib : Library.t) cctx ~for_ =
        | Simple _ -> assert false
        | Yes_with_transition r -> r)
   in
+  let main_module_name =
+    lazy
+      (match Library.main_module_name lib with
+       | This (Some mmn) -> Module_name.to_string mmn
+       | _ -> assert false)
+  in
   Modules.With_vlib.wrapped_compat modules
   |> Module_name.Map.to_seq
   |> Memo.parallel_iter_seq ~f:(fun (name, m) ->
-    let main_module_name =
-      match Library.main_module_name lib with
-      | This (Some mmn) -> Module_name.to_string mmn
-      | _ -> assert false
-    in
     let contents =
+      let main_module_name = Lazy.force main_module_name in
+      let open Action_builder.O in
+      let+ () = Action_builder.return () in
       let name = Module_name.to_string name in
       let hidden_name = sprintf "%s__%s" main_module_name name in
       let real_name = sprintf "%s.%s" main_module_name name in
@@ -144,7 +148,7 @@ let gen_wrapped_compat_modules (lib : Library.t) cctx ~for_ =
     let source_path = Option.value_exn (Module.file m ~ml_kind:Impl) in
     let loc = lib.buildable.loc in
     let sctx = Compilation_context.super_context cctx in
-    Action_builder.write_file (Path.as_in_build_dir_exn source_path) contents
+    Action_builder.write_file_dyn (Path.as_in_build_dir_exn source_path) contents
     |> Super_context.add_rule sctx ~loc ~dir:(Compilation_context.dir cctx))
 ;;
 
@@ -470,18 +474,21 @@ let setup_build_archives
     Lib_info.eval_native_archives_exn lib_info ~modules:(Some modules)
   in
   let* () =
-    let cm_files =
-      let excluded_modules =
-        (* ctypes type_gen and function_gen scripts should not be included in the
+    match lib.kind with
+    | Parameter -> Memo.return ()
+    | Virtual | Dune_file _ ->
+      let cm_files =
+        let excluded_modules =
+          (* ctypes type_gen and function_gen scripts should not be included in the
            library. Otherwise they will spew stuff to stdout on library load. *)
-        match lib.buildable.ctypes with
-        | Some ctypes -> Ctypes_field.non_installable_modules ctypes
-        | None -> []
+          match lib.buildable.ctypes with
+          | Some ctypes -> Ctypes_field.non_installable_modules ctypes
+          | None -> []
+        in
+        Cm_files.make ~excluded_modules ~obj_dir ~ext_obj ~modules ~top_sorted_modules ()
       in
-      Cm_files.make ~excluded_modules ~obj_dir ~ext_obj ~modules ~top_sorted_modules ()
-    in
-    iter_modes_concurrently modes.ocaml ~f:(fun mode ->
-      build_lib lib ~native_archives ~dir ~sctx ~expander ~flags ~mode ~cm_files)
+      iter_modes_concurrently modes.ocaml ~f:(fun mode ->
+        build_lib lib ~native_archives ~dir ~sctx ~expander ~flags ~mode ~cm_files)
   and* () =
     (* Build *.cma.js / *.wasma *)
     Memo.when_ modes.ocaml.byte (fun () ->
@@ -511,59 +518,30 @@ let setup_build_archives
     (fun () -> build_shared ~native_archives ~sctx lib ~dir ~flags)
 ;;
 
-let cctx
-      (lib : Library.t)
-      ~sctx
-      ~(source_modules : Modules.t option Lib_mode.By_mode.t)
-      ~dir
-      ~expander
-      ~scope
-      ~compile_info
-  =
-  let* flags = Buildable_rules.ocaml_flags sctx ~dir lib.buildable.flags in
+
+let cctx (lib : Library.t) ~sctx ~source_modules ~dir ~expander ~scope ~compile_info =
+  let* flags = Buildable_rules.ocaml_flags sctx ~dir lib.buildable.flags
+  and* implements = Virtual_rules.impl sctx ~lib ~scope in
   let obj_dir = Library.obj_dir ~dir lib in
-  let modules_vimpl_pp source_modules ~for_ =
-    let+ modules, pp =
-      Buildable_rules.modules_rules
-        sctx
-        (Library (lib.buildable, snd lib.name))
-        expander
-        ~dir
-        scope
-        source_modules
-        ~for_
-    and+ vimpl = Virtual_rules.impl sctx ~lib ~scope ~for_ in
-    let modules = Vimpl.impl_modules vimpl modules in
-    modules, vimpl, pp
+  let* modules, pp =
+    Buildable_rules.modules_rules
+      sctx
+      (Library (lib.buildable, snd lib.name))
+      expander
+      ~dir
+      scope
+      source_modules
   in
-  let* modules, vimpl, pp =
-    let+ modules_pp =
-      Memo.Option.map source_modules.ocaml ~f:(modules_vimpl_pp ~for_:(Ocaml Byte))
-    and+ melange_modules_pp =
-      Memo.Option.map source_modules.melange ~f:(modules_vimpl_pp ~for_:Melange)
-    in
-    let modules (ms, _, _) = ms
-    and vimpl (_, v, _) = v
-    and pp (_, _, pp) = pp in
-    ( { Lib_mode.By_mode.ocaml = Option.map ~f:modules modules_pp
-      ; melange = Option.map ~f:modules melange_modules_pp
-      }
-    , (match Option.bind ~f:vimpl modules_pp, Option.bind ~f:vimpl melange_modules_pp with
-       | None, None -> None
-       | ocaml, melange -> Some { Lib_mode.By_mode.ocaml; melange })
-    , match Option.map ~f:pp modules_pp, Option.map ~f:pp melange_modules_pp with
-      | Some pp, Some _ | Some pp, None | None, Some pp -> pp
-      | None, None -> assert false )
-  in
-  let requires_compile = Lib.Compile.all_direct_requires compile_info in
-  let requires_link = Lib.Compile.all_requires_link compile_info in
+  let modules = Virtual_rules.impl_modules implements modules in
+  let requires_compile = Lib.Compile.direct_requires compile_info in
+  let requires_link = Lib.Compile.requires_link compile_info in
   let package = Library.package lib in
   let js_of_ocaml = Js_of_ocaml.In_context.make ~dir lib.buildable.js_of_ocaml in
   (* XXX(anmonteiro): `melange_package_name` is used to derive Melange's
-     `--bs-package-name` argument. We only use the library name for public
+     `--mel-package-name` argument. We only use the library name for public
      libraries / private libraries with `(package ..)` because we need Melange
      to preserve relative paths for private libs (i.e. not pass the
-     `--bs-package-name` arg). *)
+     `--mel-package-name` arg). *)
   let melange_package_name =
     match lib.visibility with
     | Public p -> Some (Public_lib.name p)
@@ -575,16 +553,16 @@ let cctx
     ~super_context:sctx
     ~scope
     ~obj_dir
-    ~modules
+    ~modules:source_modules
     ~flags
     ~requires_compile
     ~requires_link
+    ~implements
     ~preprocessing:pp
     ~opaque:Inherit_from_settings
     ~js_of_ocaml:(Js_of_ocaml.Mode.Pair.map ~f:Option.some js_of_ocaml)
     ?stdlib:lib.stdlib
     ~package
-    ?vimpl
     ~melange_package_name
 ;;
 
@@ -598,6 +576,10 @@ let library_rules
       ~ctx_dir
       ~modes
   =
+
+  let modules = Compilation_context.modules cctx in
+  let obj_dir = Compilation_context.obj_dir cctx in
+  let implements = Compilation_context.implements cctx in
   let sctx = Compilation_context.super_context cctx in
   let obj_dir = Compilation_context.obj_dir cctx in
   let scope = Compilation_context.scope cctx in
@@ -639,15 +621,12 @@ let library_rules
       in
       for_, top_sorted_modules)
   in
-  let* () =
-    Memo.Option.iter source_modules.melange ~f:(fun source_modules ->
-      Melange_rules.setup_melange_sources_copy_rules
-        ~sctx
-        ~dir
-        ~expander
-        ~modules:source_modules)
-  in
-  let* () = Module_compilation.build_all cctx
+
+  let* () = Virtual_rules.setup_copy_rules_for_impl ~sctx ~dir implements in
+  let* expander = Super_context.expander sctx ~dir in
+  let* () = Check_rules.add_cycle_check sctx ~dir top_sorted_modules in
+  let* () = gen_wrapped_compat_modules lib cctx
+  and* () = Module_compilation.build_all cctx
   and* lib_info =
     let info =
       Library.to_lib_info
@@ -673,10 +652,8 @@ let library_rules
          let _for_, top_sorted_modules = List.hd top_sorted_modules in
          setup_build_archives lib ~lib_info ~top_sorted_modules ~cctx ~expander ~modes)
   and+ () =
-    let vlib_stubs_o_files =
-      (* TODO(anmonteiro): don't execute this for Melange? *)
-      Vimpl.vlib_stubs_o_files (Compilation_context.vimpl ~for_:(Ocaml Byte) cctx)
-    in
+
+    let vlib_stubs_o_files = Virtual_rules.stubs_o_files implements in
     Memo.when_
       (Library.has_foreign lib || List.is_non_empty vlib_stubs_o_files)
       (fun () ->

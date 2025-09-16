@@ -121,7 +121,37 @@ let decode =
          "modes"
          (Modes.decode ~stanza_loc ~dune_version project)
          ~default:(Mode_conf.Lib.Set.default stanza_loc)
-     and+ kind = field "kind" Lib_kind.decode ~default:Lib_kind.Normal
+     and+ virtual_modules, kind =
+       let* virtual_modules =
+         Ordered_set_lang.Unexpanded.field_o
+           ~check:(Dune_lang.Syntax.since Stanza.syntax (1, 7))
+           ~since_expanded:Stanza_common.Modules_settings.since_expanded
+           "virtual_modules"
+       in
+       let+ dune_file_kind =
+         field "kind" Lib_kind.Dune_file.decode ~default:Lib_kind.Dune_file.Normal
+       in
+       let kind : Lib_kind.t =
+         match virtual_modules with
+         | None -> Dune_file dune_file_kind
+         | Some _ ->
+           (match dune_file_kind with
+            | Normal ->
+              (* Libraries are virtual just in case [virtual_modules] are specified
+                 and they do not have a *non-normal* kind specified. *)
+              Virtual
+            | (Ppx_deriver _ | Ppx_rewriter _) as incompatable_kind ->
+              User_error.raise
+                ~loc:stanza_loc
+                ~hints:[ Pp.text "Remove either the 'kind' or 'virtual_modules' fields" ]
+                [ Pp.text "Only virtual libraries can have 'virtual_modules'"
+                ; Pp.textf
+                    "but this library has 'virtual_modules' and is specified as kind \
+                     '%s'."
+                    (Lib_kind.Dune_file.cstr_name incompatable_kind)
+                ])
+       in
+       virtual_modules, kind
      and+ optional = field_b "optional"
      and+ no_dynlink = field_b "no_dynlink"
      and+ () =
@@ -139,11 +169,6 @@ let decode =
        let+ _ = field_b "no_keep_locs" ~check in
        ()
      and+ sub_systems = Sub_system_info.record_parser
-     and+ virtual_modules =
-       Ordered_set_lang.Unexpanded.field_o
-         ~check:(Dune_lang.Syntax.since Stanza.syntax (1, 7))
-         ~since_expanded:Stanza_common.Modules_settings.since_expanded
-         "virtual_modules"
      and+ implements =
        field_o
          "implements"
@@ -373,7 +398,7 @@ let best_name t =
   | Public p -> snd p.name
 ;;
 
-let is_virtual t = Option.is_some t.virtual_modules
+let is_virtual t = t.kind = Virtual
 let is_impl t = Option.is_some t.implements
 
 let obj_dir ~dir t =
@@ -388,8 +413,17 @@ let obj_dir ~dir t =
       ((* TODO instead of this fragile approximation, we should be looking at
           [Modules.t] and deciding. Unfortunately, [Obj_dir.t] is currently
           used in some places where [Modules.t] is not yet constructed. *)
-       t.private_modules <> None
-       || t.buildable.modules.root_module <> None)
+       t.private_modules
+       <> None
+          (* CR-someday rgrinberg: The following check used to be here:
+
+            {[
+              || t.buildable.modules.root_module <> None
+            ]}
+
+            but it doesn't work correctly. We need to always pass the
+            root_module with [ -H ] at least *)
+      )
     ~private_lib
     (snd t.name)
 ;;
@@ -444,7 +478,12 @@ let to_lib_info
   let archive ?(dir = dir) ext = archive conf ~dir ~ext in
   let modes = Mode_conf.Lib.Set.eval ~has_native conf.modes in
   let archive_for_mode ~f_ext ~mode =
-    if Mode.Dict.get modes.ocaml mode then Some (archive (f_ext mode)) else None
+    if Mode.Dict.get modes.ocaml mode
+    then (
+      match conf.kind with
+      | Parameter -> None
+      | Virtual | Dune_file _ -> Some (archive (f_ext mode)))
+    else None
   in
   let archives_for_mode ~f_ext =
     Mode.Dict.of_func (fun ~mode -> archive_for_mode ~f_ext ~mode |> Option.to_list)
@@ -616,7 +655,6 @@ let to_lib_info
     ~enabled
     ~virtual_deps
     ~dune_version
-    ~virtual_
     ~entry_modules
     ~implements
     ~default_implementation
@@ -627,6 +665,7 @@ let to_lib_info
     ~exit_module
     ~instrumentation_backend
     ~melange_runtime_deps
+    ~root_module:(Option.map conf.buildable.modules.root_module ~f:snd)
 ;;
 
 include Stanza.Make (struct

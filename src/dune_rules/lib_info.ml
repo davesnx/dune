@@ -325,9 +325,8 @@ type 'path t =
   ; virtual_deps : (Loc.t * Lib_name.t) list
   ; dune_version : Dune_lang.Syntax.Version.t option
   ; sub_systems : Sub_system_info.t Sub_system_name.Map.t
-  ; virtual_ : bool
-  ; entry_modules :
-      (Module_name.t list option Lib_mode.By_mode.t, User_message.t) result Source.t
+
+  ; entry_modules : (Module_name.t list, User_message.t) result Source.t
   ; implements : (Loc.t * Lib_name.t) option
   ; default_implementation : (Loc.t * Lib_name.t) option
   ; wrapped : Wrapped.t Inherited.t option
@@ -339,6 +338,7 @@ type 'path t =
   ; instrumentation_backend : (Loc.t * Lib_name.t) option
   ; path_kind : 'path path
   ; melange_runtime_deps : 'path File_deps.t
+  ; root_module : Module_name.t option
   }
 
 let name t = t.name
@@ -363,6 +363,7 @@ let public_headers t = t.public_headers
 let exit_module t = t.exit_module
 let instrumentation_backend t = t.instrumentation_backend
 let melange_runtime_deps t = t.melange_runtime_deps
+let root_module t = t.root_module
 let plugins t = t.plugins
 let src_dir t = t.src_dir
 let enabled t = t.enabled
@@ -370,7 +371,7 @@ let status t = t.status
 let kind t = t.kind
 let default_implementation t = t.default_implementation
 let obj_dir t = t.obj_dir
-let virtual_ t = t.virtual_
+let virtual_ t = t.kind = Virtual
 let implements t = t.implements
 let synopsis t = t.synopsis
 let wrapped t = t.wrapped
@@ -427,7 +428,6 @@ let create
       ~enabled
       ~virtual_deps
       ~dune_version
-      ~virtual_
       ~entry_modules
       ~implements
       ~default_implementation
@@ -438,6 +438,7 @@ let create
       ~exit_module
       ~instrumentation_backend
       ~melange_runtime_deps
+      ~root_module
   =
   { loc
   ; name
@@ -466,7 +467,6 @@ let create
   ; virtual_deps
   ; dune_version
   ; sub_systems
-  ; virtual_
   ; entry_modules
   ; implements
   ; default_implementation
@@ -478,6 +478,7 @@ let create
   ; instrumentation_backend
   ; path_kind
   ; melange_runtime_deps
+  ; root_module
   }
 ;;
 
@@ -562,7 +563,6 @@ let to_dyn
       ; virtual_deps
       ; dune_version
       ; sub_systems
-      ; virtual_
       ; implements
       ; default_implementation
       ; modes
@@ -573,6 +573,7 @@ let to_dyn
       ; instrumentation_backend
       ; melange_runtime_deps
       ; entry_modules
+      ; root_module
       }
   =
   let open Dyn in
@@ -603,11 +604,10 @@ let to_dyn
     ; "virtual_deps", list (snd Lib_name.to_dyn) virtual_deps
     ; "dune_version", option Dune_lang.Syntax.Version.to_dyn dune_version
     ; "sub_systems", Sub_system_name.Map.to_dyn Dyn.opaque sub_systems
-    ; "virtual_", bool virtual_
     ; ( "entry_modules"
       , Source.to_dyn
           (Result.to_dyn
-             (Lib_mode.By_mode.to_dyn (option (list Module_name.to_dyn)))
+             (list Module_name.to_dyn)
              string)
           (Source.map entry_modules ~f:(Result.map_error ~f:User_message.to_string)) )
     ; "implements", option (snd Lib_name.to_dyn) implements
@@ -623,6 +623,7 @@ let to_dyn
     ; "exit_module", option Module_name.to_dyn exit_module
     ; "instrumentation_backend", option (snd Lib_name.to_dyn) instrumentation_backend
     ; "melange_runtime_deps", File_deps.to_dyn path melange_runtime_deps
+    ; "root_module", option Module_name.to_dyn root_module
     ]
 ;;
 

@@ -72,12 +72,11 @@ use the system OCaml for this.
 
 Now we finally make the OCaml package for testing through the lock file:
 
-  $ mkdir dune.lock
-  $ cat >dune.lock/lock.dune <<EOF
-  > (lang package 0.1)
+  $ make_lockdir
+  $ cat >> ${source_lock_dir}/lock.dune <<EOF
   > (ocaml mycaml)
   > EOF
-  $ cat >dune.lock/mycaml.pkg <<EOF
+  $ make_lockpkg mycaml <<EOF
   > (version 0.0.1)
   > (source (copy $PWD/mycamlsources))
   > (build

@@ -1,4 +1,4 @@
-(lang dune 3.20)
+(lang dune 3.18)
 ;          ^^^^
 ; When changing the version, don't forget to regenerate *.opam files
 ; by running [dune build].
@@ -15,7 +15,6 @@
 
 ;; This is required to allow Dune to access OxCaml variable. It
 ;; won't affect the behaviour of Dune if OxCaml is not available.
-(using oxcaml 0.1)
 
 (license MIT)
 (maintainers "Jane Street Group, LLC <opensource@janestreet.com>")
@@ -79,6 +78,7 @@ executable was built.
   (dyn (= :version))
   (stdune (= :version))
   (ocaml (>= 4.08)))
+ (maintenance_intent none)
  (description "\
 !!!!!!!!!!!!!!!!!!!!!!
 !!!!! DO NOT USE !!!!!
@@ -134,8 +134,8 @@ execution of the action.
  (depends
   (stdune (= :version))
   dyn
-  ordering
-  (dune-private-libs (= :version)))
+  re
+  ordering)
  (description "\
 dune-glob provides a parser and interpreter for globs as \
 understood by dune language."))
@@ -149,7 +149,7 @@ understood by dune language."))
 (package
  (name dune-rpc)
  (synopsis "Communicate with dune using rpc")
- (depends csexp ordering dyn xdg (stdune (= :version)) (pp (>= 1.1.0)))
+ (depends ocamlc-loc csexp ordering dyn xdg (stdune (= :version)) (pp (>= 1.1.0)))
  (description "Library to connect and control a running dune instance"))
 
 (package
@@ -169,6 +169,7 @@ understood by dune language."))
   (ocaml (>= 4.08.0))
   (ordering (= :version))
   (pp (>= 1.1.0)))
+ (maintenance_intent none)
  (description "Dynamic type"))
 
 (package
@@ -176,6 +177,7 @@ understood by dune language."))
  (synopsis "Element ordering")
  (depends
   (ocaml (>= 4.08.0)))
+ (maintenance_intent none)
  (description "Element ordering"))
 
 (package
@@ -186,15 +188,26 @@ understood by dune language."))
  (description "https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html"))
 
 (package
+ (name top-closure)
+ (synopsis "Topological Closure")
+ (depends
+  (ocaml (>= 4.08)))
+ (maintenance_intent none)
+ (description "Generic Topological Closure"))
+
+(package
  (name stdune)
  (synopsis "Dune's unstable standard library")
  (depends
   (ocaml (>= 4.08.0))
   base-unix
+  (csexp (>= 1.5.0))
   (dyn (= :version))
+  (fs-io (= :version))
   (ordering (= :version))
   (pp (>= 2.0.0))
-  (csexp (>= 1.5.0)))
+  (top-closure (= :version)))
+ (maintenance_intent none)
  (description "This library offers no backwards compatibility guarantees. Use at your own risk."))
 
 (package
@@ -205,6 +218,7 @@ understood by dune language."))
  (depends
   (ocaml (>= 4.08.0))
   (dyn (= :version)))
+ (maintenance_intent none)
  (description "This library offers no backwards compatibility guarantees. Use at your own risk."))
 
 (package
@@ -213,3 +227,13 @@ understood by dune language."))
  (depends
   (ocaml (>= 4.08.0)))
  (description "This library offers no backwards compatibility guarantees. Use at your own risk."))
+
+(package
+ (name fs-io)
+ (synopsis "File System Operations")
+ (depends
+  base-unix
+  (ocaml (>= 4.08)))
+ (maintenance_intent none)
+ (description "Misc. Collection of File System Operations"))
+

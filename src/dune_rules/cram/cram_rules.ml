@@ -11,6 +11,7 @@ module Spec = struct
     ; enabled_if : (Expander.t * Blang.t) list
     ; locks : Path.Set.t Action_builder.t
     ; packages : Package.Name.Set.t
+    ; timeout : (Loc.t * float) option
     }
 
   let make_empty ~test_name_alias =
@@ -22,6 +23,7 @@ module Spec = struct
     ; deps = []
     ; sandbox = Sandbox_config.needs_sandboxing
     ; packages = Package.Name.Set.empty
+    ; timeout = None
     }
   ;;
 end
@@ -29,23 +31,19 @@ end
 type error = Missing_run_t of Cram_test.t
 
 let missing_run_t (error : Cram_test.t) =
-  Action_builder.fail
-    { fail =
-        (fun () ->
-          let dir =
-            match error with
-            | File _ ->
-              (* This error is impossible for file tests *)
-              assert false
-            | Dir { dir; file = _ } -> dir
-          in
-          User_error.raise
-            ~loc:(Loc.in_dir (Path.source dir))
-            [ Pp.textf
-                "Cram test directory %s does not contain a run.t file."
-                (Path.Source.to_string dir)
-            ])
-    }
+  let dir =
+    match error with
+    | File _ ->
+      (* This error is impossible for file tests *)
+      assert false
+    | Dir { dir; file = _ } -> dir
+  in
+  User_error.raise
+    ~loc:(Loc.in_dir (Path.source dir))
+    [ Pp.textf
+        "Cram test directory %s does not contain a run.t file."
+        (Path.Source.to_string dir)
+    ]
 ;;
 
 let test_rule
@@ -59,6 +57,7 @@ let test_rule
        ; locks
        ; sandbox
        ; packages = _
+       ; timeout
        } :
         Spec.t)
       (test : (Cram_test.t, error) result)
@@ -78,7 +77,8 @@ let test_rule
   match test with
   | Error (Missing_run_t test) ->
     (* We error out on invalid tests even if they are disabled. *)
-    Alias_rules.add sctx ~alias ~loc (missing_run_t test)
+    Action_builder.fail { fail = (fun () -> missing_run_t test) }
+    |> Alias_rules.add sctx ~alias ~loc
   | Ok test ->
     (* Morally, this is equivalent to evaluating them all concurrently and
        taking the conjunction, but we do it this way to avoid evaluating things
@@ -131,6 +131,7 @@ let test_rule
               ()
           and+ locks = locks >>| Path.Set.to_list in
           Cram_exec.run
+            ~src:(Path.build script)
             ~dir:
               (Path.build
                  (match test with
@@ -138,6 +139,7 @@ let test_rule
                   | Dir d -> Path.Build.append_source prefix_with d.dir))
             ~script:(Path.build script_sh)
             ~output
+            ~timeout
           |> Action.Full.make ~locks ~sandbox)
          |> Action_builder.with_file_targets ~file_targets:[ output ]
          |> Super_context.add_rule sctx ~dir ~loc
@@ -280,6 +282,12 @@ let rules ~sctx ~dir tests =
                 | Some (p : Package.t) ->
                   Package.Name.Set.add acc.packages (Package.name p)
               in
+              let timeout =
+                Option.merge
+                  acc.timeout
+                  stanza.timeout
+                  ~f:(Ordering.min (fun x y -> Float.compare (snd x) (snd y)))
+              in
               ( runtest_alias
               , { acc with
                   enabled_if
@@ -289,6 +297,7 @@ let rules ~sctx ~dir tests =
                 ; extra_aliases
                 ; packages
                 ; sandbox
+                ; timeout
                 } ))
       in
       let extra_aliases =

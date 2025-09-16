@@ -33,7 +33,8 @@ val create
   -> js_of_ocaml:Js_of_ocaml.In_context.t option Js_of_ocaml.Mode.Pair.t
   -> package:Package.t option
   -> melange_package_name:Lib_name.t option
-  -> ?vimpl:Vimpl.t option Lib_mode.By_mode.t
+  -> ?implements:Virtual_rules.t
+  -> ?modes:Mode_conf.Set.Details.t Lib_mode.Map.t
   -> ?bin_annot:bool
   -> ?loc:Loc.t (* -> melange_modules:Module_name.Set.t option *)
   -> unit
@@ -65,7 +66,7 @@ val js_of_ocaml : t -> Js_of_ocaml.In_context.t option Js_of_ocaml.Mode.Pair.t
 val sandbox : t -> Sandbox_config.t
 val set_sandbox : t -> Sandbox_config.t -> t
 val package : t -> Package.t option
-val vimpl : t -> for_:Lib_mode.t -> Vimpl.t option
+val implements : t -> Virtual_rules.t
 val melange_package_name : t -> Lib_name.t option
 val for_wrapped_compat : t -> t
 val for_root_module : t -> Module.t -> for_:Lib_mode.t -> t
@@ -80,7 +81,6 @@ val for_module_generated_at_link_time
 val for_plugin_executable : t -> embed_in_plugin_libraries:(Loc.t * Lib_name.t) list -> t
 val bin_annot : t -> bool
 val without_bin_annot : t -> t
-val root_module_entries : t -> for_:Lib_mode.t -> Module_name.t list Action_builder.t
 
 (** The dependency graph for the modules of the library. *)
 val dep_graphs : t -> for_:Lib_mode.t -> Dep_graph.t Ml_kind.Dict.t

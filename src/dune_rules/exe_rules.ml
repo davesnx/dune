@@ -355,12 +355,9 @@ let rules ~sctx ~dir_contents ~scope ~expander (exes : Executables.t) =
       ~compile_info
       ~embed_in_plugin_libraries:exes.embed_in_plugin_libraries
   in
-  let for_ = Lib_mode.Ocaml Byte in
-  let* () = Buildable_rules.gen_select_rules sctx compile_info ~dir ~for_
-  and* () =
-    let requires_link = Lib.Compile.requires_link compile_info ~for_ in
-    Bootstrap_info.gen_rules sctx exes ~dir ~requires_link
-  in
+
+  let* () = Buildable_rules.gen_select_rules sctx compile_info ~dir
+  and* () = Bootstrap_info.gen_rules sctx exes ~dir compile_info dir_contents in
   let merlin_ident = Merlin_ident.for_exes ~names:(Nonempty_list.map ~f:snd exes.names) in
   Buildable_rules.with_lib_deps (Super_context.context sctx) merlin_ident ~dir ~f
 ;;
