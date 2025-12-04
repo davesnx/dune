@@ -10,6 +10,7 @@ type t =
   | Opam_publish
   | Dune_release
   | Ocaml_index
+  | Reason
 
 let to_dyn = function
   | Ocamlformat -> Dyn.variant "Ocamlformat" []
@@ -21,6 +22,7 @@ let to_dyn = function
   | Opam_publish -> Dyn.variant "Opam_publish" []
   | Dune_release -> Dyn.variant "Dune_release" []
   | Ocaml_index -> Dyn.variant "Ocaml_index" []
+  | Reason -> Dyn.variant "Reason" []
 ;;
 
 let all =
@@ -33,6 +35,7 @@ let all =
   ; Opam_publish
   ; Dune_release
   ; Ocaml_index
+  ; Reason
   ]
 ;;
 
@@ -51,12 +54,12 @@ let equal a b =
   | Odig, Odig -> true
   | Odig, _ | _, Odig -> false
   | Opam_publish, Opam_publish -> true
-  | Opam_publish, _ -> false
-  | _, Opam_publish -> false
+  | Opam_publish, _ | _, Opam_publish -> false
   | Dune_release, Dune_release -> true
-  | Dune_release, _ -> false
-  | _, Dune_release -> false
+  | Dune_release, _ | _, Dune_release -> false
   | Ocaml_index, Ocaml_index -> true
+  | Ocaml_index, _ | _, Ocaml_index -> false
+  | Reason, Reason -> true
 ;;
 
 let hash = Poly.hash
@@ -71,6 +74,7 @@ let package_name = function
   | Opam_publish -> Package_name.of_string "opam-publish"
   | Dune_release -> Package_name.of_string "dune-release"
   | Ocaml_index -> Package_name.of_string "ocaml-index"
+  | Reason -> Package_name.of_string "reason"
 ;;
 
 let of_package_name package_name =
@@ -84,6 +88,7 @@ let of_package_name package_name =
   | "opam-publish" -> Opam_publish
   | "dune-release" -> Dune_release
   | "ocaml-index" -> Ocaml_index
+  | "reason" -> Reason
   | other -> User_error.raise [ Pp.textf "No such dev tool: %s" other ]
 ;;
 
@@ -97,6 +102,7 @@ let exe_name = function
   | Opam_publish -> "opam-publish"
   | Dune_release -> "dune-release"
   | Ocaml_index -> "ocaml-index"
+  | Reason -> "reason"
 ;;
 
 let exe_path_components_within_package t = [ "bin"; exe_name t ]
@@ -110,5 +116,6 @@ let needs_to_build_with_same_compiler_as_project = function
     false
   | Opam_publish -> false
   | Dune_release -> false
+  | Reason -> false
   | Utop | Odoc | Ocamllsp | Ocaml_index | Odig -> true
 ;;

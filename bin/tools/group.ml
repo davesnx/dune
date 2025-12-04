@@ -15,6 +15,7 @@ module Exec = struct
          ; Opam_publish
          ; Dune_release
          ; Ocaml_index
+         ; Reason
          ]
          ~f:Tools_common.exec_command)
   ;;

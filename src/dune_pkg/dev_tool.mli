@@ -8,6 +8,7 @@ type t =
   | Opam_publish
   | Dune_release
   | Ocaml_index
+  | Reason
 
 val to_dyn : t -> Dyn.t
 val all : t list
